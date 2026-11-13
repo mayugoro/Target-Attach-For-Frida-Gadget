@@ -31,12 +31,14 @@ Tombol tersebut akan mengarahkan ke **Magisk / KernelSU / APatch** untuk memberi
 
 ## Download
 
-APK terbaru dapat diunduh dari halaman [Releases](https://github.com/mayugoro/Target-Attach-For-Frida-Gadget/releases).
+APK terbaru (v1.0):
+
+**[⬇️ TargetAttach4Frida-v1.0.apk](https://github.com/mayugoro/Target-Attach-For-Frida-Gadget/releases/download/v1.0/TargetAttach4Frida-v1.0.apk)**
 
 Atau install langsung lewat Termux:
 
 ```bash
-curl -sSL -o /sdcard/Download/TargetAttach4Frida.apk <LINK_APK_TERBARU>
+curl -sSL -o /sdcard/Download/TargetAttach4Frida.apk https://github.com/mayugoro/Target-Attach-For-Frida-Gadget/releases/download/v1.0/TargetAttach4Frida-v1.0.apk
 su -c 'pm install -r /sdcard/Download/TargetAttach4Frida.apk'
 ```
 
