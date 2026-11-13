@@ -156,31 +156,6 @@ public class MainActivity extends Activity {
         ((LinearLayout.LayoutParams) refreshBar.getLayoutParams()).gravity = Gravity.CENTER_HORIZONTAL;
         refreshBar.setPadding(0, dp(6), 0, dp(6));
 
-        // pull-to-refresh: saat mentok atas & geser ke bawah -> refresh
-        final float[] startY = {0f};
-        final boolean[] refreshing = {false};
-        list.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, android.view.MotionEvent ev) {
-                switch (ev.getActionMasked()) {
-                    case android.view.MotionEvent.ACTION_DOWN:
-                        startY[0] = ev.getRawY();
-                        refreshing[0] = false;
-                        break;
-                    case android.view.MotionEvent.ACTION_MOVE:
-                        // di puncak + tidak bisa scroll ke atas + ditarik turun
-                        if (!refreshing[0]
-                                && !list.canScrollVertically(-1)
-                                && (ev.getRawY() - startY[0]) > dp(80)) {
-                            refreshing[0] = true;
-                            refresh();
-                        }
-                        break;
-                }
-                return false;
-            }
-        });
-
         root.addView(topBar);
         root.addView(searchBox);
         root.addView(refreshBar);
@@ -213,16 +188,20 @@ public class MainActivity extends Activity {
         btns.setGravity(Gravity.CENTER);
         btns.setPadding(0, dp(16), 0, 0);
 
+        Button btnRefresh = new Button(this);
+        btnRefresh.setText("Refresh");
         Button btnDir = new Button(this);
         btnDir.setText("Direktori");
         Button btnReboot = new Button(this);
         btnReboot.setText("Reboot");
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        lp.setMargins(dp(4), 0, dp(4), 0);
+        lp.setMargins(dp(3), 0, dp(3), 0);
+        btnRefresh.setLayoutParams(lp);
         btnDir.setLayoutParams(lp);
         btnReboot.setLayoutParams(lp);
 
+        btns.addView(btnRefresh);
         btns.addView(btnDir);
         btns.addView(btnReboot);
         panel.addView(btns);
@@ -243,6 +222,7 @@ public class MainActivity extends Activity {
             loadData();
         });
 
+        btnRefresh.setOnClickListener(v -> { dialog.dismiss(); refresh(); });
         btnDir.setOnClickListener(v -> { dialog.dismiss(); showDirDialog(); });
         btnReboot.setOnClickListener(v -> {
             dialog.dismiss();
