@@ -18,7 +18,6 @@ import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
-import android.view.Menu;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
@@ -27,7 +26,6 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
-import android.widget.PopupMenu;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -146,6 +144,30 @@ public class MainActivity extends Activity {
         adapter = new AppAdapter();
         list.setAdapter(adapter);
 
+        // pull-to-refresh: saat mentok atas & geser ke bawah -> refresh
+        list.setOnTouchListener(new View.OnTouchListener() {
+            float startY = 0;
+            boolean armed = false;
+            @Override
+            public boolean onTouch(View v, android.view.MotionEvent ev) {
+                if (ev.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                    startY = ev.getRawY();
+                    armed = list.getFirstVisiblePosition() == 0
+                            && list.getChildCount() > 0
+                            && list.getChildAt(0).getTop() == 0;
+                } else if (ev.getAction() == android.view.MotionEvent.ACTION_MOVE && armed) {
+                    if (ev.getRawY() - startY > dp(120)) {
+                        armed = false;
+                        refresh();
+                    }
+                } else if (ev.getAction() == android.view.MotionEvent.ACTION_UP
+                        || ev.getAction() == android.view.MotionEvent.ACTION_CANCEL) {
+                    armed = false;
+                }
+                return false;
+            }
+        });
+
         root.addView(topBar);
         root.addView(searchBox);
         root.addView(list, new LinearLayout.LayoutParams(
@@ -156,33 +178,69 @@ public class MainActivity extends Activity {
     }
 
     private void showMenu(View anchor) {
-        PopupMenu pop = new PopupMenu(this, anchor);
-        Menu m = pop.getMenu();
-        m.add(Menu.NONE, 1, Menu.NONE, "Tampilkan app bawaan").setCheckable(true).setChecked(showSystem());
-        m.add(Menu.NONE, 2, Menu.NONE, "Tampilkan app tersembunyi").setCheckable(true).setChecked(showHidden());
-        m.add(Menu.NONE, 3, Menu.NONE, "Direktori");
-        m.add(Menu.NONE, 4, Menu.NONE, "Reboot");
-        pop.setOnMenuItemClickListener(item -> {
-            switch (item.getItemId()) {
-                case 1:
-                    prefs.edit().putBoolean("show_system", item.isChecked()).apply();
-                    loadData();
-                    return true;
-                case 2:
-                    prefs.edit().putBoolean("show_hidden", item.isChecked()).apply();
-                    loadData();
-                    return true;
-                case 3:
-                    showDirDialog();
-                    return true;
-                case 4:
-                    suExec("reboot");
-                    Toast.makeText(this, "Reboot dikirim...", Toast.LENGTH_SHORT).show();
-                    return true;
-            }
-            return false;
+        // dialog custom: CheckBox asli (reliabel) + tombol aksi
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(24), dp(16), dp(24), dp(8));
+
+        final android.widget.CheckBox cbSystem = new android.widget.CheckBox(this);
+        cbSystem.setText("Tampilkan app bawaan");
+        cbSystem.setChecked(showSystem());
+
+        final android.widget.CheckBox cbHidden = new android.widget.CheckBox(this);
+        cbHidden.setText("Tampilkan app tersembunyi");
+        cbHidden.setChecked(showHidden());
+
+        panel.addView(cbSystem);
+        panel.addView(cbHidden);
+
+        LinearLayout btns = new LinearLayout(this);
+        btns.setOrientation(LinearLayout.HORIZONTAL);
+        btns.setGravity(Gravity.CENTER);
+        btns.setPadding(0, dp(16), 0, 0);
+
+        Button btnDir = new Button(this);
+        btnDir.setText("Direktori");
+        Button btnReboot = new Button(this);
+        btnReboot.setText("Reboot");
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(dp(4), 0, dp(4), 0);
+        btnDir.setLayoutParams(lp);
+        btnReboot.setLayoutParams(lp);
+
+        btns.addView(btnDir);
+        btns.addView(btnReboot);
+        panel.addView(btns);
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Pengaturan")
+                .setView(panel)
+                .setPositiveButton("Terapkan", null)
+                .setNegativeButton("Batal", null)
+                .create();
+
+        cbSystem.setOnCheckedChangeListener((b, checked) -> {
+            prefs.edit().putBoolean("show_system", checked).apply();
+            loadData();
         });
-        pop.show();
+        cbHidden.setOnCheckedChangeListener((b, checked) -> {
+            prefs.edit().putBoolean("show_hidden", checked).apply();
+            loadData();
+        });
+
+        btnDir.setOnClickListener(v -> { dialog.dismiss(); showDirDialog(); });
+        btnReboot.setOnClickListener(v -> {
+            dialog.dismiss();
+            suExec("reboot");
+            Toast.makeText(this, "Reboot dikirim...", Toast.LENGTH_SHORT).show();
+        });
+
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> dialog.dismiss());
+        });
+
+        dialog.show();
     }
 
     private void showDirDialog() {
@@ -212,6 +270,11 @@ public class MainActivity extends Activity {
                 adapter.update(allApps, targets, "");
             });
         }).start();
+    }
+
+    private void refresh() {
+        Toast.makeText(this, "Refreshing...", Toast.LENGTH_SHORT).show();
+        loadData();
     }
 
     private List<AppEntry> loadApps() {
@@ -351,22 +414,29 @@ public class MainActivity extends Activity {
     }
 
     private void showScriptPicker(final AppEntry entry) {
-        List<File> scripts = findScripts();
-        if (scripts.isEmpty()) {
-            new AlertDialog.Builder(this)
-                    .setTitle("Tidak ada script .js")
-                    .setMessage("Taruh file .js Frida di:\n/sdcard/Download/  atau  /sdcard/frida-scripts/\n\n(atau atur lewat menu ☰ → Direktori)")
-                    .setPositiveButton("OK", null)
-                    .show();
-            return;
-        }
-        String[] names = new String[scripts.size()];
-        for (int i = 0; i < scripts.size(); i++) names[i] = scripts.get(i).getName();
-        final File[] files = scripts.toArray(new File[0]);
-        new AlertDialog.Builder(this)
-                .setTitle("Attach " + entry.label + " — pilih script")
-                .setItems(names, (d, which) -> runFrida(entry, files[which]))
-                .show();
+        new Thread(() -> {
+            final List<File> scripts = findScripts();
+            runOnUiThread(() -> {
+                if (scripts.isEmpty()) {
+                    String ext = Environment.getExternalStorageDirectory().getAbsolutePath();
+                    new AlertDialog.Builder(this)
+                            .setTitle("Tidak ada script .js")
+                            .setMessage("Tidak ditemukan file .js di penyimpanan.\n\nTempatkan script di " + ext + " (misal folder Download atau frida-scripts), lalu tap lagi.")
+                            .setPositiveButton("OK", null)
+                            .show();
+                    return;
+                }
+                String[] names = new String[scripts.size()];
+                for (int i = 0; i < scripts.size(); i++) {
+                    names[i] = scripts.get(i).getName() + "  (" + scripts.get(i).getParent() + ")";
+                }
+                final File[] files = scripts.toArray(new File[0]);
+                new AlertDialog.Builder(this)
+                        .setTitle("Attach " + entry.label + " — pilih script")
+                        .setItems(names, (d, which) -> runFrida(entry, files[which]))
+                        .show();
+            });
+        }).start();
     }
 
     private List<File> findScripts() {
@@ -374,9 +444,25 @@ public class MainActivity extends Activity {
         String custom = prefs.getString("script_dir", "");
         if (!custom.isEmpty()) {
             addJs(out, new File(custom));
-        } else {
-            addJs(out, Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS));
-            addJs(out, new File(Environment.getExternalStorageDirectory(), "frida-scripts"));
+            return out;
+        }
+        // 1) folder default (cepat)
+        addJs(out, Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS));
+        addJs(out, new File(Environment.getExternalStorageDirectory(), "frida-scripts"));
+        // 2) scan luas via root: temukan .js di mana pun di penyimpanan (maxdepth 4)
+        String ext = Environment.getExternalStorageDirectory().getAbsolutePath();
+        String found = suRead("find " + ext + " -maxdepth 4 -name '*.js' -type f 2>/dev/null");
+        if (found != null) {
+            for (String line : found.split("\n")) {
+                line = line.trim();
+                if (line.isEmpty()) continue;
+                File f = new File(line);
+                if (f.isFile()) {
+                    boolean dup = false;
+                    for (File e : out) if (e.getAbsolutePath().equals(f.getAbsolutePath())) { dup = true; break; }
+                    if (!dup) out.add(f);
+                }
+            }
         }
         return out;
     }
