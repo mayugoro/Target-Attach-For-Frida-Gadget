@@ -58,4 +58,4 @@ Membutuhkan: JDK 8+, `aapt2`, `r8`/`d8`, `apksigner` (path menyesuaikan di `buil
 
 ## Lisensi
 
-[MIT](LICENSE) © 2026 MAYUGORO
+[Apache-2.0](LICENSE) © 2026 MAYUGORO
