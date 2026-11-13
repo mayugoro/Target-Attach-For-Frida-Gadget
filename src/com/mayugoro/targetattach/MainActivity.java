@@ -127,8 +127,13 @@ public class MainActivity extends Activity {
         Button menuBtn = new Button(this);
         menuBtn.setText("☰");
         menuBtn.setTextSize(20);
-        menuBtn.setMinWidth(dp(48));
-        menuBtn.setPadding(dp(4), 0, dp(4), 0);
+        menuBtn.setMinWidth(dp(44));
+        menuBtn.setMinHeight(dp(44));
+        menuBtn.setMaxWidth(dp(44));
+        menuBtn.setMaxHeight(dp(44));
+        menuBtn.setPadding(0, 0, 0, 0);
+        menuBtn.setTextColor(0xFF555555);
+        menuBtn.setBackgroundColor(0xFFEEEEEE);
         menuBtn.setOnClickListener(v -> showMenu(menuBtn));
 
         topBar.addView(title);
@@ -183,28 +188,18 @@ public class MainActivity extends Activity {
         panel.addView(cbSystem);
         panel.addView(cbHidden);
 
-        LinearLayout btns = new LinearLayout(this);
-        btns.setOrientation(LinearLayout.HORIZONTAL);
-        btns.setGravity(Gravity.CENTER);
-        btns.setPadding(0, dp(16), 0, 0);
+        LinearLayout menu = new LinearLayout(this);
+        menu.setOrientation(LinearLayout.VERTICAL);
+        menu.setPadding(0, dp(8), 0, 0);
 
-        Button btnRefresh = new Button(this);
-        btnRefresh.setText("Refresh");
-        Button btnDir = new Button(this);
-        btnDir.setText("Direktori");
-        Button btnReboot = new Button(this);
-        btnReboot.setText("Reboot");
+        TextView itemRefresh = menuText("Refresh");
+        TextView itemDir = menuText("Direktori");
+        TextView itemReboot = menuText("Reboot");
 
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        lp.setMargins(dp(3), 0, dp(3), 0);
-        btnRefresh.setLayoutParams(lp);
-        btnDir.setLayoutParams(lp);
-        btnReboot.setLayoutParams(lp);
-
-        btns.addView(btnRefresh);
-        btns.addView(btnDir);
-        btns.addView(btnReboot);
-        panel.addView(btns);
+        menu.addView(itemRefresh);
+        menu.addView(itemDir);
+        menu.addView(itemReboot);
+        panel.addView(menu);
 
         final AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Pengaturan")
@@ -222,9 +217,9 @@ public class MainActivity extends Activity {
             loadData();
         });
 
-        btnRefresh.setOnClickListener(v -> { dialog.dismiss(); refresh(); });
-        btnDir.setOnClickListener(v -> { dialog.dismiss(); showDirDialog(); });
-        btnReboot.setOnClickListener(v -> {
+        itemRefresh.setOnClickListener(v -> { dialog.dismiss(); refresh(); });
+        itemDir.setOnClickListener(v -> { dialog.dismiss(); showDirDialog(); });
+        itemReboot.setOnClickListener(v -> {
             dialog.dismiss();
             suExec("reboot");
             Toast.makeText(this, "Reboot dikirim...", Toast.LENGTH_SHORT).show();
@@ -235,6 +230,18 @@ public class MainActivity extends Activity {
         });
 
         dialog.show();
+    }
+
+    private TextView menuText(String label) {
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextSize(17);
+        tv.setTextColor(0xFF222222);
+        tv.setPadding(dp(4), dp(14), dp(4), dp(14));
+        tv.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        tv.setClickable(true);
+        tv.setFocusable(true);
+        return tv;
     }
 
     private void showDirDialog() {
