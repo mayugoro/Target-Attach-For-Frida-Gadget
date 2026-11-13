@@ -185,21 +185,20 @@ public class MainActivity extends Activity {
         cbHidden.setText("");
         cbHidden.setChecked(showHidden());
 
-        panel.addView(checkRow("Tampilkan app bawaan", cbSystem));
-        panel.addView(checkRow("Tampilkan app tersembunyi", cbHidden));
-
-        LinearLayout menu = new LinearLayout(this);
-        menu.setOrientation(LinearLayout.VERTICAL);
-        menu.setPadding(0, dp(8), 0, 0);
-
         TextView itemRefresh = menuText("Refresh");
-        TextView itemDir = menuText("Direktori");
         TextView itemReboot = menuText("Reboot");
+        TextView itemDir = menuText("Direktori");
 
-        menu.addView(itemRefresh);
-        menu.addView(itemDir);
-        menu.addView(itemReboot);
-        panel.addView(menu);
+        panel.addView(itemRefresh);
+        panel.addView(itemReboot);
+        panel.addView(itemDir);
+
+        LinearLayout checks = new LinearLayout(this);
+        checks.setOrientation(LinearLayout.VERTICAL);
+        checks.setPadding(0, dp(8), 0, 0);
+        checks.addView(checkRow("Tampilkan app bawaan", cbSystem));
+        checks.addView(checkRow("Tampilkan app tersembunyi", cbHidden));
+        panel.addView(checks);
 
         final AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Pengaturan")
