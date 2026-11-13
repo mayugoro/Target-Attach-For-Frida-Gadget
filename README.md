@@ -1,6 +1,12 @@
 # Target Attach For Frida Gadget
 
+<img src="icon.png" width="96" align="left" style="margin-right:16px">
+
+**Freeze · Attach · Hook** — kelola target Frida Gadget dari UI Android.
+
 Aplikasi Android untuk mengelola daftar **target aplikasi** yang akan **dibekukan (freeze) saat diluncurkan**, agar kamu bisa **attach Frida Gadget** (via **ZygiskFrida gadget**, **bukan Frida server biasa**). Tidak perlu lagi salin-tempel command di Termux — cukup toggle dari UI.
+
+<br clear="all">
 
 > ⚠️ **Catatan penting:** Aplikasi ini bekerja dengan **Frida Gadget**, bukan **frida-server**.
 > - **Frida Gadget** = library `.so` yang di-inject langsung ke dalam proses aplikasi target secara *embedded*. Aplikasi target ditahan (gated) pada saat startup, lalu kita *attach* ke proses tersebut.
