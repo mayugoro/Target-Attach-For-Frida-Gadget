@@ -26,6 +26,7 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.ProgressBar;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -50,8 +51,10 @@ public class MainActivity extends Activity {
 
     private List<AppEntry> allApps = new ArrayList<>();
     private Set<String> targets = new HashSet<>();
+    private Set<String> pinned = new HashSet<>();
     private AppAdapter adapter;
     private SharedPreferences prefs;
+    private ProgressBar refreshBar;
 
     static class AppEntry {
         final String packageName;
@@ -72,6 +75,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("ta4f", MODE_PRIVATE);
+        pinned = new HashSet<>(prefs.getStringSet("pinned", new HashSet<String>()));
         buildUi();
         checkRootAndWarn();
     }
@@ -145,6 +149,13 @@ public class MainActivity extends Activity {
         list.setAdapter(adapter);
         list.setOverScrollMode(View.OVER_SCROLL_ALWAYS);
 
+        refreshBar = new ProgressBar(this);
+        refreshBar.setVisibility(View.GONE);
+        refreshBar.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ((LinearLayout.LayoutParams) refreshBar.getLayoutParams()).gravity = Gravity.CENTER_HORIZONTAL;
+        refreshBar.setPadding(0, dp(6), 0, dp(6));
+
         // pull-to-refresh: saat mentok atas & geser ke bawah -> refresh
         final float[] startY = {0f};
         final boolean[] refreshing = {false};
@@ -172,6 +183,7 @@ public class MainActivity extends Activity {
 
         root.addView(topBar);
         root.addView(searchBox);
+        root.addView(refreshBar);
         root.addView(list, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
@@ -270,12 +282,13 @@ public class MainActivity extends Activity {
                 allApps = apps;
                 targets = t;
                 adapter.update(allApps, targets, "");
+                if (refreshBar != null) refreshBar.setVisibility(View.GONE);
             });
         }).start();
     }
 
     private void refresh() {
-        Toast.makeText(this, "Refreshing...", Toast.LENGTH_SHORT).show();
+        if (refreshBar != null) refreshBar.setVisibility(View.VISIBLE);
         loadData();
     }
 
@@ -368,18 +381,28 @@ public class MainActivity extends Activity {
     }
 
     private void onLongPress(AppEntry entry) {
+        final boolean isPinned = pinned.contains(entry.packageName);
         new AlertDialog.Builder(this)
                 .setTitle(entry.label)
                 .setItems(new CharSequence[]{
+                        isPinned ? "Lepas sematan" : "Sematkan",
                         "Luncurkan",
                         "Detail",
                         "Hapus",
                 }, (d, which) -> {
-                    if (which == 0) launchApp(entry.packageName);
-                    else if (which == 1) detailApp(entry.packageName);
+                    if (which == 0) togglePin(entry.packageName);
+                    else if (which == 1) launchApp(entry.packageName);
+                    else if (which == 2) detailApp(entry.packageName);
                     else confirmUninstall(entry);
                 })
                 .show();
+    }
+
+    private void togglePin(String pkg) {
+        if (pinned.contains(pkg)) pinned.remove(pkg);
+        else pinned.add(pkg);
+        prefs.edit().putStringSet("pinned", new HashSet<>(pinned)).apply();
+        adapter.resort();
     }
 
     private void launchApp(String pkg) {
@@ -645,6 +668,13 @@ public class MainActivity extends Activity {
             notifyDataSetChanged();
         }
 
+        void resort() {
+            synchronized (lock) {
+                display = filterList(allApps, "");
+            }
+            notifyDataSetChanged();
+        }
+
         private List<AppEntry> filterList(List<AppEntry> from, String q) {
             String query = q == null ? "" : q.toLowerCase().trim();
             List<AppEntry> out = new ArrayList<>();
@@ -656,6 +686,9 @@ public class MainActivity extends Activity {
                 }
             }
             Collections.sort(out, (a, b) -> {
+                boolean pa = pinned.contains(a.packageName);
+                boolean pb = pinned.contains(b.packageName);
+                if (pa != pb) return pa ? -1 : 1;
                 boolean ta = targets.contains(a.packageName);
                 boolean tb = targets.contains(b.packageName);
                 if (ta != tb) return ta ? -1 : 1;
@@ -723,7 +756,7 @@ public class MainActivity extends Activity {
 
             vh.pkg = pkg;
             vh.label.setText(entry.label);
-            vh.pkgText.setText(pkg);
+            vh.pkgText.setText(pinned.contains(pkg) ? "Sematkan  •  " + pkg : pkg);
             if (entry.icon != null) vh.icon.setImageDrawable(entry.icon);
             else vh.icon.setImageDrawable(null);
 
