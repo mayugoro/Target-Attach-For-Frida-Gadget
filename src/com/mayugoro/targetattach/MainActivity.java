@@ -178,15 +178,15 @@ public class MainActivity extends Activity {
         panel.setPadding(dp(24), dp(16), dp(24), dp(8));
 
         final android.widget.CheckBox cbSystem = new android.widget.CheckBox(this);
-        cbSystem.setText("Tampilkan app bawaan");
+        cbSystem.setText("");
         cbSystem.setChecked(showSystem());
 
         final android.widget.CheckBox cbHidden = new android.widget.CheckBox(this);
-        cbHidden.setText("Tampilkan app tersembunyi");
+        cbHidden.setText("");
         cbHidden.setChecked(showHidden());
 
-        panel.addView(cbSystem);
-        panel.addView(cbHidden);
+        panel.addView(checkRow("Tampilkan app bawaan", cbSystem));
+        panel.addView(checkRow("Tampilkan app tersembunyi", cbHidden));
 
         LinearLayout menu = new LinearLayout(this);
         menu.setOrientation(LinearLayout.VERTICAL);
@@ -208,15 +208,6 @@ public class MainActivity extends Activity {
                 .setNegativeButton("Batal", null)
                 .create();
 
-        cbSystem.setOnCheckedChangeListener((b, checked) -> {
-            prefs.edit().putBoolean("show_system", checked).apply();
-            loadData();
-        });
-        cbHidden.setOnCheckedChangeListener((b, checked) -> {
-            prefs.edit().putBoolean("show_hidden", checked).apply();
-            loadData();
-        });
-
         itemRefresh.setOnClickListener(v -> { dialog.dismiss(); refresh(); });
         itemDir.setOnClickListener(v -> { dialog.dismiss(); showDirDialog(); });
         itemReboot.setOnClickListener(v -> {
@@ -226,10 +217,33 @@ public class MainActivity extends Activity {
         });
 
         dialog.setOnShowListener(d -> {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> dialog.dismiss());
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                // baru diterapkan saat "Terapkan" ditekan
+                prefs.edit().putBoolean("show_system", cbSystem.isChecked()).apply();
+                prefs.edit().putBoolean("show_hidden", cbHidden.isChecked()).apply();
+                dialog.dismiss();
+                loadData();
+            });
         });
 
         dialog.show();
+    }
+
+    private LinearLayout checkRow(String label, android.widget.CheckBox cb) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(6), 0, dp(6));
+
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextSize(16);
+        tv.setTextColor(0xFF222222);
+        tv.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        row.addView(tv);
+        row.addView(cb);
+        return row;
     }
 
     private TextView menuText(String label) {
