@@ -1,0 +1,7 @@
+# build artifact
+bin/
+target-attach-4-frida.apk
+*.apk.signed.apk.idsig
+*.idsig
+__pycache__/
+*.class
