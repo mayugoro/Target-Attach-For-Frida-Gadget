@@ -7,6 +7,7 @@ import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Drawable;
@@ -17,6 +18,7 @@ import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.Menu;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
@@ -25,6 +27,7 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.PopupMenu;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -50,6 +53,7 @@ public class MainActivity extends Activity {
     private List<AppEntry> allApps = new ArrayList<>();
     private Set<String> targets = new HashSet<>();
     private AppAdapter adapter;
+    private SharedPreferences prefs;
 
     static class AppEntry {
         final String packageName;
@@ -69,6 +73,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        prefs = getSharedPreferences("ta4f", MODE_PRIVATE);
         buildUi();
         checkRootAndWarn();
     }
@@ -83,6 +88,9 @@ public class MainActivity extends Activity {
 
     private boolean rootDenied = false;
     private boolean rootDialogShowing = false;
+
+    private boolean showSystem() { return prefs.getBoolean("show_system", false); }
+    private boolean showHidden() { return prefs.getBoolean("show_hidden", false); }
 
     private void checkRootAndWarn() {
         new Thread(() -> {
@@ -106,7 +114,7 @@ public class MainActivity extends Activity {
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setPadding(dp(16), dp(10), dp(8), dp(10));
+        topBar.setPadding(dp(16), dp(6), dp(6), dp(6));
 
         TextView title = new TextView(this);
         title.setText("Target Attach 4 Frida");
@@ -114,17 +122,20 @@ public class MainActivity extends Activity {
         title.setGravity(Gravity.CENTER_VERTICAL);
         title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        Button restartBtn = new Button(this);
-        restartBtn.setText("Restart");
-        restartBtn.setOnClickListener(v -> confirmRestart());
+        Button menuBtn = new Button(this);
+        menuBtn.setText("☰");
+        menuBtn.setTextSize(20);
+        menuBtn.setMinWidth(dp(48));
+        menuBtn.setPadding(dp(4), 0, dp(4), 0);
+        menuBtn.setOnClickListener(v -> showMenu(menuBtn));
 
         topBar.addView(title);
-        topBar.addView(restartBtn);
+        topBar.addView(menuBtn);
 
         EditText searchBox = new EditText(this);
-        searchBox.setHint("Cari package / nama app... (tekan tahan = menu)");
+        searchBox.setHint("Cari aplikasi");
         searchBox.setSingleLine(true);
-        searchBox.setPadding(dp(12), dp(8), dp(12), dp(8));
+        searchBox.setPadding(dp(14), dp(8), dp(14), dp(8));
         searchBox.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
             public void onTextChanged(CharSequence s, int a, int b, int c) { adapter.filter(s.toString()); }
@@ -144,6 +155,53 @@ public class MainActivity extends Activity {
         loadData();
     }
 
+    private void showMenu(View anchor) {
+        PopupMenu pop = new PopupMenu(this, anchor);
+        Menu m = pop.getMenu();
+        m.add(Menu.NONE, 1, Menu.NONE, "Tampilkan app bawaan").setCheckable(true).setChecked(showSystem());
+        m.add(Menu.NONE, 2, Menu.NONE, "Tampilkan app tersembunyi").setCheckable(true).setChecked(showHidden());
+        m.add(Menu.NONE, 3, Menu.NONE, "Direktori");
+        m.add(Menu.NONE, 4, Menu.NONE, "Reboot");
+        pop.setOnMenuItemClickListener(item -> {
+            switch (item.getItemId()) {
+                case 1:
+                    prefs.edit().putBoolean("show_system", item.isChecked()).apply();
+                    loadData();
+                    return true;
+                case 2:
+                    prefs.edit().putBoolean("show_hidden", item.isChecked()).apply();
+                    loadData();
+                    return true;
+                case 3:
+                    showDirDialog();
+                    return true;
+                case 4:
+                    suExec("reboot");
+                    Toast.makeText(this, "Reboot dikirim...", Toast.LENGTH_SHORT).show();
+                    return true;
+            }
+            return false;
+        });
+        pop.show();
+    }
+
+    private void showDirDialog() {
+        EditText et = new EditText(this);
+        et.setHint("/storage/emulated/0/Download");
+        et.setSingleLine(true);
+        et.setText(prefs.getString("script_dir", ""));
+        new AlertDialog.Builder(this)
+                .setTitle("Direktori script")
+                .setMessage("Path folder tempat file .js Frida disimpan.\nKosongkan untuk pakai default (Download + frida-scripts).")
+                .setView(et)
+                .setPositiveButton("Simpan", (d, w) -> {
+                    prefs.edit().putString("script_dir", et.getText().toString().trim()).apply();
+                    Toast.makeText(this, "Direktori disimpan", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Batal", null)
+                .show();
+    }
+
     private void loadData() {
         new Thread(() -> {
             List<AppEntry> apps = loadApps();
@@ -159,12 +217,15 @@ public class MainActivity extends Activity {
     private List<AppEntry> loadApps() {
         List<AppEntry> result = new ArrayList<>();
         PackageManager pm = getPackageManager();
-        List<ApplicationInfo> infos = pm.getInstalledApplications(0);
+        int flags = PackageManager.GET_DISABLED_COMPONENTS;
+        List<ApplicationInfo> infos = pm.getInstalledApplications(flags);
         for (ApplicationInfo ai : infos) {
             if (getPackageName().equals(ai.packageName)) continue;
             boolean isSystem = (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0
                     || (ai.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
-            if (isSystem) continue;
+            boolean isDisabled = !ai.enabled;
+            if (isSystem && !showSystem()) continue;
+            if (isDisabled && !showHidden()) continue;
             String label = String.valueOf(pm.getApplicationLabel(ai));
             Drawable icon = null;
             try { icon = pm.getApplicationIcon(ai); } catch (Exception ignored) {}
@@ -237,7 +298,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    // ---- tap: attach frida; long-press: menu aksi ----
     private void onTapAttach(AppEntry entry) {
         showScriptPicker(entry);
     }
@@ -246,9 +306,9 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle(entry.label)
                 .setItems(new CharSequence[]{
-                        "🚀 Luncurkan",
-                        "ℹ️ Detail app",
-                        "🗑️ Hapus (uninstall)",
+                        "Luncurkan",
+                        "Detail",
+                        "Hapus",
                 }, (d, which) -> {
                     if (which == 0) launchApp(entry.packageName);
                     else if (which == 1) detailApp(entry.packageName);
@@ -295,7 +355,7 @@ public class MainActivity extends Activity {
         if (scripts.isEmpty()) {
             new AlertDialog.Builder(this)
                     .setTitle("Tidak ada script .js")
-                    .setMessage("Taruh file .js Frida di:\n/sdcard/Download/  atau  /sdcard/frida-scripts/")
+                    .setMessage("Taruh file .js Frida di:\n/sdcard/Download/  atau  /sdcard/frida-scripts/\n\n(atau atur lewat menu ☰ → Direktori)")
                     .setPositiveButton("OK", null)
                     .show();
             return;
@@ -311,19 +371,23 @@ public class MainActivity extends Activity {
 
     private List<File> findScripts() {
         List<File> out = new ArrayList<>();
-        File[] dirs = {
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                new File(Environment.getExternalStorageDirectory(), "frida-scripts"),
-        };
-        for (File dir : dirs) {
-            File[] fs = dir.listFiles();
-            if (fs != null) {
-                for (File f : fs) {
-                    if (f.isFile() && f.getName().toLowerCase().endsWith(".js")) out.add(f);
-                }
-            }
+        String custom = prefs.getString("script_dir", "");
+        if (!custom.isEmpty()) {
+            addJs(out, new File(custom));
+        } else {
+            addJs(out, Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS));
+            addJs(out, new File(Environment.getExternalStorageDirectory(), "frida-scripts"));
         }
         return out;
+    }
+
+    private void addJs(List<File> out, File dir) {
+        File[] fs = dir.listFiles();
+        if (fs != null) {
+            for (File f : fs) {
+                if (f.isFile() && f.getName().toLowerCase().endsWith(".js")) out.add(f);
+            }
+        }
     }
 
     private void runFrida(AppEntry entry, File script) {
@@ -364,19 +428,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void confirmRestart() {
-        new AlertDialog.Builder(this)
-                .setTitle("Restart HP?")
-                .setMessage("Menjalankan `su -c reboot`. HP akan mati-hidup agar config ZygiskFrida re-apply bersih.")
-                .setPositiveButton("Reboot", (d, w) -> {
-                    suExec("reboot");
-                    Toast.makeText(this, "Reboot dikirim...", Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton("Batal", null)
-                .show();
-    }
-
-    // ---- su helpers ----
     private boolean hasRoot() {
         try {
             Process p = new ProcessBuilder("su", "-c", "id -u")
@@ -592,7 +643,6 @@ public class MainActivity extends Activity {
             vh.sw.setChecked(targets.contains(pkg));
             vh.sw.setOnCheckedChangeListener((btn, isChecked) -> toggleTarget(pkg, isChecked));
 
-            // tap = attach frida, long-press = menu (hapus/luncurkan/detail)
             convert.setOnClickListener(v -> onTapAttach(entry));
             convert.setOnLongClickListener(v -> {
                 onLongPress(entry);
