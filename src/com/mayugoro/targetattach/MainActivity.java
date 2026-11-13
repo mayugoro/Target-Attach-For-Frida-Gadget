@@ -143,26 +143,28 @@ public class MainActivity extends Activity {
         ListView list = new ListView(this);
         adapter = new AppAdapter();
         list.setAdapter(adapter);
+        list.setOverScrollMode(View.OVER_SCROLL_ALWAYS);
 
         // pull-to-refresh: saat mentok atas & geser ke bawah -> refresh
+        final float[] startY = {0f};
+        final boolean[] refreshing = {false};
         list.setOnTouchListener(new View.OnTouchListener() {
-            float startY = 0;
-            boolean armed = false;
             @Override
             public boolean onTouch(View v, android.view.MotionEvent ev) {
-                if (ev.getAction() == android.view.MotionEvent.ACTION_DOWN) {
-                    startY = ev.getRawY();
-                    armed = list.getFirstVisiblePosition() == 0
-                            && list.getChildCount() > 0
-                            && list.getChildAt(0).getTop() == 0;
-                } else if (ev.getAction() == android.view.MotionEvent.ACTION_MOVE && armed) {
-                    if (ev.getRawY() - startY > dp(120)) {
-                        armed = false;
-                        refresh();
-                    }
-                } else if (ev.getAction() == android.view.MotionEvent.ACTION_UP
-                        || ev.getAction() == android.view.MotionEvent.ACTION_CANCEL) {
-                    armed = false;
+                switch (ev.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        startY[0] = ev.getRawY();
+                        refreshing[0] = false;
+                        break;
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        // di puncak + tidak bisa scroll ke atas + ditarik turun
+                        if (!refreshing[0]
+                                && !list.canScrollVertically(-1)
+                                && (ev.getRawY() - startY[0]) > dp(80)) {
+                            refreshing[0] = true;
+                            refresh();
+                        }
+                        break;
                 }
                 return false;
             }
