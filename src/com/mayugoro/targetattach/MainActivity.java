@@ -2,10 +2,18 @@ package com.mayugoro.targetattach;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
@@ -68,7 +76,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        // balik dari Magisk/KernelSU -> cek ulang root
         if (rootDenied) {
             checkRootAndWarn();
         }
@@ -85,7 +92,6 @@ public class MainActivity extends Activity {
                     rootDenied = true;
                     showRootDialog();
                 } else {
-                    // root aktif, baru muat data
                     rootDenied = false;
                     loadData();
                 }
@@ -97,7 +103,6 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
 
-        // --- top bar ---
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -116,9 +121,8 @@ public class MainActivity extends Activity {
         topBar.addView(title);
         topBar.addView(restartBtn);
 
-        // --- search box ---
         EditText searchBox = new EditText(this);
-        searchBox.setHint("Cari package / nama app...");
+        searchBox.setHint("Cari package / nama app... (tekan tahan = menu)");
         searchBox.setSingleLine(true);
         searchBox.setPadding(dp(12), dp(8), dp(12), dp(8));
         searchBox.addTextChangedListener(new TextWatcher() {
@@ -127,7 +131,6 @@ public class MainActivity extends Activity {
             public void afterTextChanged(Editable s) {}
         });
 
-        // --- list ---
         ListView list = new ListView(this);
         adapter = new AppAdapter();
         list.setAdapter(adapter);
@@ -158,9 +161,7 @@ public class MainActivity extends Activity {
         PackageManager pm = getPackageManager();
         List<ApplicationInfo> infos = pm.getInstalledApplications(0);
         for (ApplicationInfo ai : infos) {
-            // blacklist: app kita sendiri (jangan sampai bisa di-stuck sendiri)
             if (getPackageName().equals(ai.packageName)) continue;
-            // hanya app hasil install user (skip app bawaan/system)
             boolean isSystem = (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0
                     || (ai.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
             if (isSystem) continue;
@@ -236,6 +237,133 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ---- tap: attach frida; long-press: menu aksi ----
+    private void onTapAttach(AppEntry entry) {
+        showScriptPicker(entry);
+    }
+
+    private void onLongPress(AppEntry entry) {
+        new AlertDialog.Builder(this)
+                .setTitle(entry.label)
+                .setItems(new CharSequence[]{
+                        "🚀 Luncurkan",
+                        "ℹ️ Detail app",
+                        "🗑️ Hapus (uninstall)",
+                }, (d, which) -> {
+                    if (which == 0) launchApp(entry.packageName);
+                    else if (which == 1) detailApp(entry.packageName);
+                    else confirmUninstall(entry);
+                })
+                .show();
+    }
+
+    private void launchApp(String pkg) {
+        try {
+            Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
+            if (i != null) startActivity(i);
+            else Toast.makeText(this, "App tidak bisa diluncurkan", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Gagal luncurkan", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void detailApp(String pkg) {
+        try {
+            Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + pkg));
+            startActivity(i);
+        } catch (Exception e) {
+            Toast.makeText(this, "Gagal buka detail", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void confirmUninstall(AppEntry entry) {
+        new AlertDialog.Builder(this)
+                .setTitle("Hapus aplikasi?")
+                .setMessage("Uninstall " + entry.packageName + "?")
+                .setPositiveButton("Hapus", (d, w) -> {
+                    Intent i = new Intent(Intent.ACTION_DELETE,
+                            Uri.parse("package:" + entry.packageName));
+                    startActivity(i);
+                })
+                .setNegativeButton("Batal", null)
+                .show();
+    }
+
+    private void showScriptPicker(final AppEntry entry) {
+        List<File> scripts = findScripts();
+        if (scripts.isEmpty()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Tidak ada script .js")
+                    .setMessage("Taruh file .js Frida di:\n/sdcard/Download/  atau  /sdcard/frida-scripts/")
+                    .setPositiveButton("OK", null)
+                    .show();
+            return;
+        }
+        String[] names = new String[scripts.size()];
+        for (int i = 0; i < scripts.size(); i++) names[i] = scripts.get(i).getName();
+        final File[] files = scripts.toArray(new File[0]);
+        new AlertDialog.Builder(this)
+                .setTitle("Attach " + entry.label + " — pilih script")
+                .setItems(names, (d, which) -> runFrida(entry, files[which]))
+                .show();
+    }
+
+    private List<File> findScripts() {
+        List<File> out = new ArrayList<>();
+        File[] dirs = {
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                new File(Environment.getExternalStorageDirectory(), "frida-scripts"),
+        };
+        for (File dir : dirs) {
+            File[] fs = dir.listFiles();
+            if (fs != null) {
+                for (File f : fs) {
+                    if (f.isFile() && f.getName().toLowerCase().endsWith(".js")) out.add(f);
+                }
+            }
+        }
+        return out;
+    }
+
+    private void runFrida(AppEntry entry, File script) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("frida -U ");
+        sb.append("-f ").append(entry.packageName);
+        sb.append(" -l \"").append(script.getAbsolutePath()).append("\"");
+        sb.append(" --no-pause");
+        final String cmd = sb.toString();
+
+        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        cm.setPrimaryClip(ClipData.newPlainText("frida", cmd));
+
+        new AlertDialog.Builder(this)
+                .setTitle("Command Frida siap")
+                .setMessage(cmd + "\n\nSudah disalin ke clipboard. Jalankan via Termux sekarang?")
+                .setPositiveButton("Buka Termux", (d, w) -> openTermux(cmd))
+                .setNegativeButton("Nanti", null)
+                .show();
+    }
+
+    private void openTermux(String cmd) {
+        try {
+            Intent i = new Intent();
+            i.setComponent(new ComponentName("com.termux", "com.termux.app.RunCommandService"));
+            i.setAction("com.termux.RUN_COMMAND");
+            i.putExtra("com.termux.RUN_COMMAND_PATH", cmd);
+            i.putExtra("com.termux.RUN_COMMAND_BACKGROUND", false);
+            startService(i);
+        } catch (Exception e) {
+            try {
+                Intent launch = getPackageManager().getLaunchIntentForPackage("com.termux");
+                if (launch != null) startActivity(launch);
+                else Toast.makeText(this, "Termux tidak terpasang", Toast.LENGTH_SHORT).show();
+            } catch (Exception e2) {
+                Toast.makeText(this, "Termux tidak ditemukan", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
     private void confirmRestart() {
         new AlertDialog.Builder(this)
                 .setTitle("Restart HP?")
@@ -255,9 +383,6 @@ public class MainActivity extends Activity {
                     .redirectErrorStream(true).start();
             String out = readStream(p.getInputStream());
             p.waitFor();
-            // root aktif HANYA jika `su -c "id -u"` balik 0.
-            // (jangan fallback cek binary su, karena su selalu ada di HP rooted
-            //  walau akses app-nya di-deny -> bikin false positive)
             return out != null && out.trim().equals("0");
         } catch (Exception e) {
             return false;
@@ -283,7 +408,6 @@ public class MainActivity extends Activity {
     }
 
     private void openRootManager() {
-        // coba buka Magisk / KernelSU / APatch / superuser manager umum
         String[] packages = {
                 "com.topjohnwu.magisk",
                 "com.topjohnwu.magisk.debug",
@@ -292,24 +416,15 @@ public class MainActivity extends Activity {
                 "com.kingroot.kinguser",
                 "eu.basicairdata.graziano",
         };
-        String[] activities = {
-                "com.topjohnwu.magisk.ui.MainActivity",
-                "com.topjohnwu.magisk.debug.ui.MainActivity",
-        };
         for (String pkg : packages) {
             try {
-                android.content.Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
-                if (i != null) {
-                    startActivity(i);
-                    return;
-                }
+                Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
+                if (i != null) { startActivity(i); return; }
             } catch (Exception ignored) {}
         }
-        // fallback: minta buka settings app list
         try {
-            android.content.Intent i = new android.content.Intent(
-                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    android.net.Uri.parse("package:" + getPackageName()));
+            Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + getPackageName()));
             startActivity(i);
         } catch (Exception e2) {
             Toast.makeText(this, "Buka Magisk/KernelSU lalu beri akses root", Toast.LENGTH_LONG).show();
@@ -401,7 +516,6 @@ public class MainActivity extends Activity {
                     out.add(a);
                 }
             }
-            // target-ON ditaruh paling atas, sisanya urut abjad
             Collections.sort(out, (a, b) -> {
                 boolean ta = targets.contains(a.packageName);
                 boolean tb = targets.contains(b.packageName);
@@ -429,7 +543,6 @@ public class MainActivity extends Activity {
                 iv.setLayoutParams(new LinearLayout.LayoutParams(sz, sz));
                 iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
 
-                // container teks (label + package) di tengah
                 LinearLayout col = new LinearLayout(MainActivity.this);
                 col.setOrientation(LinearLayout.VERTICAL);
                 col.setPadding(dp(12), 0, dp(8), 0);
@@ -478,6 +591,13 @@ public class MainActivity extends Activity {
             vh.sw.setOnCheckedChangeListener(null);
             vh.sw.setChecked(targets.contains(pkg));
             vh.sw.setOnCheckedChangeListener((btn, isChecked) -> toggleTarget(pkg, isChecked));
+
+            // tap = attach frida, long-press = menu (hapus/luncurkan/detail)
+            convert.setOnClickListener(v -> onTapAttach(entry));
+            convert.setOnLongClickListener(v -> {
+                onLongPress(entry);
+                return true;
+            });
 
             return convert;
         }
